@@ -5,6 +5,7 @@ export function useOverview() {
   return useQuery({
     queryKey: ['overview'],
     queryFn: analyticsApi.overview,
+    refetchInterval: 20_000,
   });
 }
 
@@ -13,5 +14,6 @@ export function useUrlStats(urlId: string | undefined, days = 30) {
     queryKey: ['analytics', urlId, days],
     queryFn: () => analyticsApi.urlStats(urlId as string, days),
     enabled: Boolean(urlId),
+    refetchInterval: 20_000,
   });
 }

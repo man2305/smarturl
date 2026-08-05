@@ -12,6 +12,7 @@ export function useUrls(params: ListUrlParams) {
     queryKey: ['urls', params],
     queryFn: () => urlsApi.list(params),
     placeholderData: keepPreviousData,
+    refetchInterval: 20_000,
   });
 }
 
