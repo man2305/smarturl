@@ -4,11 +4,11 @@ import jwt from 'jsonwebtoken';
 import { ApiError } from '../utils/ApiError';
 import { env } from '../config/env';
 
-/** 404 for any unmatched route. */
-export function notFoundHandler(req: Request, res: Response): void {
+/** 404 for any unmatched route — deliberately generic (no method/route echo). */
+export function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.originalUrl} not found`,
+    message: 'Resource not found',
   });
 }
 
@@ -33,7 +33,10 @@ export function errorHandler(
   } else if (err instanceof mongoose.Error.ValidationError) {
     statusCode = 400;
     message = 'Validation failed';
-    errors = Object.values(err.errors).map((e) => e.message);
+    // Field-level details can expose schema internals — only surface them in dev.
+    if (env.nodeEnv !== 'production') {
+      errors = Object.values(err.errors).map((e) => e.message);
+    }
   } else if (err instanceof mongoose.Error.CastError) {
     statusCode = 400;
     message = 'Invalid identifier format';

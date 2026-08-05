@@ -95,8 +95,9 @@ Easiest path — **Blueprint**:
 1. Sign up at https://vercel.com → **Add New Project** → import this repo.
 2. **Root Directory**: `frontend`.
 3. Framework preset: **Vite**. Build command: `npm run build`, output `dist`.
-4. Environment variable (build-time): `VITE_API_URL = https://<your-service>.onrender.com`
-   (note: it includes the full API origin; the app appends `/api/...`).
+4. Environment variable (build-time): `VITE_API_URL = https://<your-service>.onrender.com/api`
+   (note: the app uses this value verbatim as its API base — it must include the
+   `/api` prefix, exactly like the dev `/api` proxy path).
 5. Deploy → you get `https://<project>.vercel.app`.
 
 `frontend/vercel.json` already provides the SPA rewrite (so `/dashboard`,
