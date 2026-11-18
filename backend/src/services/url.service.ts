@@ -89,10 +89,11 @@ export const urlService = {
     const status: ListUrlsParams['status'] = ['active', 'expired'].includes(query.status ?? '')
       ? (query.status as ListUrlsParams['status'])
       : 'all';
+    const search = query.search?.trim().slice(0, 100) || undefined;
 
     const { items, total } = await urlRepository.list({
       userId,
-      search: query.search,
+      search,
       page,
       limit,
       sortBy,
