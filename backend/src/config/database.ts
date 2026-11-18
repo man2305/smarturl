@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { env } from './env';
 
-/** Connect to MongoDB with sensible production settings. */
 export async function connectDatabase(): Promise<void> {
   mongoose.set('strictQuery', true);
   mongoose.connection.on('error', (err) => {

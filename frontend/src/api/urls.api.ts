@@ -36,11 +36,6 @@ export const urlsApi = {
     return data.data as ShortUrl;
   },
 
-  async get(id: string): Promise<ShortUrl> {
-    const { data } = await api.get(`/urls/${id}`);
-    return data.data as ShortUrl;
-  },
-
   async update(id: string, input: UpdateUrlInput): Promise<ShortUrl> {
     const { data } = await api.patch(`/urls/${id}`, input);
     return data.data as ShortUrl;

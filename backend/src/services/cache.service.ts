@@ -35,11 +35,8 @@ export function toCachePayload(url: IUrlDoc): CachedShortCode {
 }
 
 /**
- * Cache-aside wrapper around Redis.
- * - `set` on write (after DB create/update)
- * - `get` on read, falling through to the database on a miss
- * - `invalidate` (DEL) on every mutation so the cache never goes stale
- * Every operation is defensive: Redis outages degrade to db-only lookups.
+ * Cache-aside wrapper around Redis. Every operation is defensive: Redis
+ * outages degrade to db-only lookups instead of failing the request.
  */
 export const cacheService = {
   async getShortCode(code: string): Promise<CacheLookup> {

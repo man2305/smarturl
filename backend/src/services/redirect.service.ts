@@ -86,8 +86,6 @@ export async function resolveShortCode(code: string): Promise<ResolveResult> {
       clickClaimed: false,
     };
   } else {
-    // Cache miss -> database lookup, coalesced with any identical lookup
-    // already in flight.
     const pending = inflightLookups.get(code);
     if (pending) {
       resolved = await pending;

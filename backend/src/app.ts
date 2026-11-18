@@ -18,7 +18,6 @@ export function createApp(): express.Express {
   // client-IP detection see real IPs.
   app.set('trust proxy', 1);
 
-  // Security headers (HSTS, X-Content-Type-Options, CSP, ...).
   app.use(helmet());
 
   // CORS with credentials for the httpOnly refresh-token cookie.
@@ -36,20 +35,18 @@ export function createApp(): express.Express {
   // Neutralize MongoDB query operator injection ($, $gt, ...) in body/query/params.
   app.use(mongoSanitize());
 
-  // gzip responses.
   app.use(compression());
 
   if (env.nodeEnv !== 'test') {
     app.use(morgan(env.isProduction ? 'combined' : 'dev'));
   }
 
-  // REST API under /api.
   app.use('/api', apiLimiter, apiRoutes);
 
-  // Redirect hot path: GET /<shortCode> (must be registered after /api).
+  // Must be registered after /api so /api/* is never treated as a short code.
   app.use(redirectRoutes);
 
-  // 404 + centralized error handling last.
+  // Error handlers must be registered last.
   app.use(notFoundHandler);
   app.use(errorHandler);
 

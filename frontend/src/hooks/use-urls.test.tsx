@@ -10,7 +10,6 @@ vi.mock('@/api/urls.api', () => ({
   urlsApi: {
     list: vi.fn(),
     create: vi.fn(),
-    get: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
   },

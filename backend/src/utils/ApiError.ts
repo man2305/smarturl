@@ -8,12 +8,12 @@ export class ApiError extends Error {
   public readonly errors?: unknown;
   public readonly isOperational: boolean;
 
-  constructor(statusCode: number, message: string, errors?: unknown) {
+  constructor(statusCode: number, message: string, errors?: unknown, isOperational = true) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
     this.errors = errors;
-    this.isOperational = true;
+    this.isOperational = isOperational;
     Error.captureStackTrace(this, this.constructor);
   }
 
@@ -37,15 +37,8 @@ export class ApiError extends Error {
     return new ApiError(409, message);
   }
 
-  static gone(message = 'Resource expired'): ApiError {
-    return new ApiError(410, message);
-  }
-
-  static tooManyRequests(message = 'Too many requests'): ApiError {
-    return new ApiError(429, message);
-  }
-
   static internal(message = 'Internal server error'): ApiError {
-    return new ApiError(500, message);
+    // A 500 is a programming/infra error, not an expected business failure.
+    return new ApiError(500, message, undefined, false);
   }
 }
