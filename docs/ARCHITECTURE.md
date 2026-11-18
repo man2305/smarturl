@@ -96,10 +96,10 @@ Every mutation (create, update, delete, deactivate) invalidates the affected key
 
 - **Registration/login** → verify credentials with `bcryptjs`, sign an **access token (15m)** and a **refresh token (7d)**.
 - The refresh token is **SHA-256 hashed** before storage; each refresh **rotates** it (new token, old one revoked). Refresh uses a single-flight pattern so concurrent 401s share one refresh.
-- The refresh token is delivered in an `httpOnly`, `SameSite=Lax` cookie (`smarturl_refresh`) scoped to `/api/auth`, so it is not readable by JS and not sent to unrelated API paths.
+- The refresh token is delivered in an `httpOnly` cookie (`smarturl_refresh`) scoped to `/api/auth`, so it is not readable by JS and not sent to unrelated API paths. `SameSite` is `None` in production (the frontend is cross-site on Vercel) and `Lax` in development; cookie endpoints are additionally guarded by an Origin check.
 - `GET /api/auth/me` and the protected routes read the access token from the `Authorization: Bearer` header.
-- **Rate limits:** strict limits on `/api/auth/register`, `/api/auth/login`, and `POST /api/urls`; trusted-proxy aware so it works behind Nginx/Render/Cloudflare.
-- Other hardening: Helmet security headers, CORS allowlist with credentials, `express-mongo-sanitize` against `$` operator injection, request body size cap, `morgan` logging (JSON in production).
+- **Rate limits:** per-endpoint limits on `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `POST /api/urls` (keyed by user), and the redirect hot path `GET /:shortCode`; trusted-proxy aware (`trust proxy 1`, correct for single-hop Render — re-check if another proxy is added in front).
+- Other hardening: Helmet security headers, CORS allowlist with credentials, `express-mongo-sanitize` against `$` operator injection, request body size cap (oversize → 413), `morgan` access logging (`combined` format in production, query strings stripped).
 
 ## Data model
 

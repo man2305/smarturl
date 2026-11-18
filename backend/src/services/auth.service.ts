@@ -5,6 +5,7 @@ import { RefreshTokenModel } from '../models/RefreshToken.model';
 import { ApiError } from '../utils/ApiError';
 import { serializeUser, type PublicUser } from '../utils/serializers';
 import { REFRESH_REUSE_GRACE_MS } from '../config/constants';
+import { env } from '../config/env';
 import {
   signAccessToken,
   signRefreshToken,
@@ -16,8 +17,6 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
-
-const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface PublicUserLike {
   id?: string;
@@ -49,7 +48,7 @@ async function issueTokens(userId: string, family?: string): Promise<AuthTokens>
   await RefreshTokenModel.create({
     token: hashToken(refreshToken),
     userId: new Types.ObjectId(userId),
-    expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+    expiresAt: new Date(Date.now() + env.jwt.refreshTtlMs),
     family: family ?? crypto.randomUUID(),
   });
 

@@ -38,10 +38,17 @@ export function createApp(): express.Express {
   app.use(compression());
 
   if (env.nodeEnv !== 'test') {
+    // Log paths without query strings: search terms and other user input
+    // in query params must not land in production access logs.
+    morgan.token('url', (req) => (req.url ?? '').split('?')[0]);
     app.use(morgan(env.isProduction ? 'combined' : 'dev'));
   }
 
   app.use('/api', apiLimiter, apiRoutes);
+
+  // Unmatched /api/* paths are 404s, not short codes — without this they
+  // fall through to the redirect router and cost a DB lookup per request.
+  app.use('/api', notFoundHandler);
 
   // Must be registered after /api so /api/* is never treated as a short code.
   app.use(redirectRoutes);

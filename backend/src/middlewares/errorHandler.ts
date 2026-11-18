@@ -22,6 +22,10 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  // An error after headers were sent cannot produce a JSON envelope;
+  // delegating to Express avoids an ERR_HTTP_HEADERS_SENT crash.
+  if (res.headersSent) return _next(err);
+
   let statusCode = 500;
   let message = 'Internal server error';
   let errors: unknown;
@@ -53,6 +57,14 @@ export function errorHandler(
   } else if (err instanceof SyntaxError && 'body' in err) {
     statusCode = 400;
     message = 'Malformed JSON payload';
+  } else if (
+    (err as { status?: number })?.status === 413 ||
+    (err as { type?: string })?.type === 'entity.too.large'
+  ) {
+    // body-parser's PayloadTooLargeError: an oversize body is a client
+    // error (413), not a 500 — and must not be logged as a server fault.
+    statusCode = 413;
+    message = 'Payload too large';
   }
 
   if (statusCode >= 500) {
