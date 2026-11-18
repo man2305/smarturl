@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { BarChart3, Link2, MousePointerClick, Users } from 'lucide-react';
 import { AppShell } from '@/components/layout/topbar';
 import { PageHeader } from '@/components/page-header';
@@ -95,9 +96,9 @@ export default function DashboardPage() {
                   </div>
                 ))
               : overviewQuery.data?.topLinks.slice(0, 4).map((link, i) => (
-                  <a
+                  <Link
                     key={link.id}
-                    href={`/links/${link.id}`}
+                    to={`/links/${link.id}`}
                     className="flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
                   >
                     <div className="min-w-0">
@@ -110,7 +111,7 @@ export default function DashboardPage() {
                       <p className="text-sm font-bold">{link.clicks.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">#{i + 1}</p>
                     </div>
-                  </a>
+                  </Link>
                 ))}
           </CardContent>
         </Card>

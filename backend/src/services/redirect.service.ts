@@ -66,13 +66,16 @@ export async function resolveShortCode(code: string): Promise<ResolveResult> {
 
   if (cached.status === 'hit') {
     const data = cached.data;
-    if (!data.isActive) return { status: 'inactive' };
-
+    // Expiry outranks inactive: a budget-exhausted link is deactivated by
+    // the claim, so a stale cached copy must still report 'expired' —
+    // the link-unavailable page shows different copy per reason.
     if (isExpired(data)) {
       await urlRepository.deactivate(data.id);
       await cacheService.invalidateShortCode(code);
       return { status: 'expired' };
     }
+
+    if (!data.isActive) return { status: 'inactive' };
 
     resolved = {
       status: 'ok',
@@ -142,15 +145,18 @@ async function loadFromDatabase(code: string): Promise<ResolveResult> {
     throw ApiError.notFound('Short link not found');
   }
 
-  if (!url.isActive) {
-    await cacheService.setShortCode(code, toCachePayload(url), env.cacheTtl);
-    return { status: 'inactive' };
-  }
-
+  // Expiry outranks inactive (see the cache-hit path above): a request
+  // that looks the link up after the budget ran out must see 'expired',
+  // not 'inactive', or the reason flips depending on lookup timing.
   if (isExpired(url)) {
     await urlRepository.deactivate(url.id);
     await cacheService.invalidateShortCode(code);
     return { status: 'expired' };
+  }
+
+  if (!url.isActive) {
+    await cacheService.setShortCode(code, toCachePayload(url), env.cacheTtl);
+    return { status: 'inactive' };
   }
 
   await cacheService.setShortCode(code, toCachePayload(url), env.cacheTtl);

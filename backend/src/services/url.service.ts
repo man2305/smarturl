@@ -89,7 +89,10 @@ export const urlService = {
     const status: ListUrlsParams['status'] = ['active', 'expired'].includes(query.status ?? '')
       ? (query.status as ListUrlsParams['status'])
       : 'all';
-    const search = query.search?.trim().slice(0, 100) || undefined;
+    // Query params can arrive as objects/arrays (?search[$gt]=...); only a
+    // string is a search term, anything else is ignored (never .trim()ed).
+    const search =
+      typeof query.search === 'string' ? query.search.trim().slice(0, 100) || undefined : undefined;
 
     const { items, total } = await urlRepository.list({
       userId,

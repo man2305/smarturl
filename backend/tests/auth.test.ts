@@ -121,6 +121,18 @@ describe('auth', () => {
         .send({ email: 'nobody@example.com', password: 'password123' })
         .expect(401);
     });
+
+    it('treats email case-insensitively', async () => {
+      await registerUser(api, { email: 'CaseTest@Example.com' });
+      await api
+        .post('/api/auth/login')
+        .send({ email: 'casetest@example.com', password: 'password123' })
+        .expect(200);
+      await api
+        .post('/api/auth/login')
+        .send({ email: 'CASETEST@EXAMPLE.COM', password: 'password123' })
+        .expect(200);
+    });
   });
 
   describe('access tokens (/me)', () => {
@@ -217,6 +229,20 @@ describe('auth', () => {
       await api
         .post('/api/auth/refresh')
         .set('Cookie', `smarturl_refresh=${user.accessToken}`)
+        .expect(401);
+    });
+
+    it('rejects an expired refresh token', async () => {
+      const user = await registerUser(api);
+      const expired = jwt.sign({ type: 'refresh' }, env.jwt.refreshSecret, {
+        subject: user.userId,
+        issuer: env.jwt.issuer,
+        audience: env.jwt.audience,
+        expiresIn: '-1s',
+      });
+      await api
+        .post('/api/auth/refresh')
+        .set('Cookie', `smarturl_refresh=${expired}`)
         .expect(401);
     });
   });
