@@ -32,19 +32,19 @@ export const apiLimiter = createLimiter({
 /** Login/register brute-force guard: 10 attempts / 15 min / IP. */
 export const authLimiter = createLimiter({
   windowMs: 15 * 60_000,
-  max: 10,
+  max: Number(process.env.RATE_LIMIT_AUTH_MAX ?? 10),
   message: 'Too many authentication attempts, please try again later',
 });
 
 /** Link creation: 30 req / min / user. */
 export const shortenLimiter = createLimiter({
   windowMs: 60_000,
-  max: 30,
+  max: Number(process.env.RATE_LIMIT_SHORTEN_MAX ?? 30),
   message: 'You are creating links too quickly, slow down',
 });
 
 /** Redirect hot path: 120 req / min / IP to contain abuse and click-farming. */
 export const redirectLimiter = createLimiter({
   windowMs: 60_000,
-  max: 120,
+  max: Number(process.env.RATE_LIMIT_REDIRECT_MAX ?? 120),
 });
