@@ -14,34 +14,52 @@ export interface ClickContext {
   userId: string;
   shortCode: string;
   maxClicks: number | null;
+  /** True when the redirect already consumed one click of the budget. */
+  clickClaimed: boolean;
   ip: string;
   userAgent?: string;
   referrer?: string;
 }
 
 /**
+ * Unique-visitor check. Redis SADD is atomic and O(1); when Redis is down
+ * or errors, fall back to the database check instead of silently
+ * undercounting. The DB fallback is check-then-insert, so two concurrent
+ * first visits from one IP in no-Redis mode can over-count by one — an
+ * accepted best-effort trade-off (see TESTING.md).
+ */
+async function checkNewVisitor(urlId: string, ip: string): Promise<boolean> {
+  if (!ip) return false;
+  if (isRedisEnabled()) {
+    try {
+      return await cacheService.isNewVisitor(urlId, ip);
+    } catch {
+      // Fall through to the database check.
+    }
+  }
+  try {
+    return await analyticsRepository.isFirstVisitByIp(urlId, ip);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fire-and-forget click recording (never blocks the redirect).
- * Failures are logged and swallowed so analytics outages never break links.
+ * Failures are logged per step and swallowed so analytics outages never
+ * break links. The event row is written first: if it fails, the counters
+ * stay untouched, so the two sources cannot disagree by a phantom click.
+ * (Without replica-set transactions the two writes cannot be made
+ * atomic; this ordering keeps the richer record authoritative.)
  */
 export async function recordClick(ctx: ClickContext): Promise<void> {
   try {
     const { browser, browserVersion, os, device, deviceName } = parseUserAgent(ctx.userAgent);
     const { country, countryCode } = lookupCountry(ctx.ip);
+    const isNewVisitor = await checkNewVisitor(ctx.urlId, ctx.ip);
 
-    let isNewVisitor = false;
-    if (isRedisEnabled()) {
-      // Redis set SADD is atomic — perfect for O(1) unique dedup.
-      isNewVisitor = await cacheService.isNewVisitor(ctx.urlId, ctx.ip);
-    } else if (ctx.ip) {
-      isNewVisitor = await analyticsRepository.isFirstVisitByIp(ctx.urlId, ctx.ip);
-    }
-
-    await Promise.all([
-      urlRepository.incrementCounters(ctx.urlId, {
-        clicks: 1,
-        uniqueVisitors: isNewVisitor ? 1 : 0,
-      }),
-      analyticsRepository.create({
+    try {
+      await analyticsRepository.create({
         urlId: new Types.ObjectId(ctx.urlId),
         userId: new Types.ObjectId(ctx.userId),
         ip: ctx.ip,
@@ -54,10 +72,29 @@ export async function recordClick(ctx: ClickContext): Promise<void> {
         deviceName,
         country,
         countryCode,
-      }),
-    ]);
+      });
+    } catch (err) {
+      console.error('[analytics] failed to store click event:', err);
+      return;
+    }
 
-    // Click-budget expiry: atomically deactivate when the cap is reached.
+    const clicksInc = ctx.clickClaimed ? 0 : 1;
+    const uvInc = isNewVisitor ? 1 : 0;
+    if (clicksInc > 0 || uvInc > 0) {
+      try {
+        await urlRepository.incrementCounters(ctx.urlId, {
+          clicks: clicksInc,
+          uniqueVisitors: uvInc,
+        });
+      } catch (err) {
+        console.error('[analytics] failed to increment counters:', err);
+      }
+    }
+
+    // Click-budget expiry safety net: capped links are normally
+    // deactivated atomically by the claim itself; this covers any path
+    // that reaches the cap without claiming (e.g. a cap lowered below
+    // the current count).
     if (ctx.maxClicks) {
       const deactivated = await UrlModel.updateOne(
         { _id: ctx.urlId, isActive: true, $expr: { $gte: ['$clicks', ctx.maxClicks] } },
@@ -91,11 +128,11 @@ export async function getUrlAnalytics(userId: string, urlId: string, days = 30):
 
   const [daily, browsers, devices, os, countries, referrers, totalClicks] = await Promise.all([
     analyticsRepository.getDailyClicks(urlId, since),
-    analyticsRepository.getDimensionBreakdown(urlId, 'browser'),
-    analyticsRepository.getDimensionBreakdown(urlId, 'device'),
-    analyticsRepository.getDimensionBreakdown(urlId, 'os'),
-    analyticsRepository.getDimensionBreakdown(urlId, 'country'),
-    analyticsRepository.getDimensionBreakdown(urlId, 'referrer'),
+    analyticsRepository.getDimensionBreakdown(urlId, 'browser', 8, since),
+    analyticsRepository.getDimensionBreakdown(urlId, 'device', 8, since),
+    analyticsRepository.getDimensionBreakdown(urlId, 'os', 8, since),
+    analyticsRepository.getDimensionBreakdown(urlId, 'country', 8, since),
+    analyticsRepository.getDimensionBreakdown(urlId, 'referrer', 8, since),
     analyticsRepository.countByUrlId(urlId),
   ]);
 
@@ -130,10 +167,10 @@ export async function getOverview(userId: string, topLimit = 5): Promise<Overvie
       analyticsRepository.topLinks(userId, topLimit),
       analyticsRepository.recentActivity(userId, 8),
       analyticsRepository.getDailyClicksByUser(userId, since),
-      analyticsRepository.getDimensionBreakdownByUser(userId, 'browser'),
-      analyticsRepository.getDimensionBreakdownByUser(userId, 'device'),
-      analyticsRepository.getDimensionBreakdownByUser(userId, 'os'),
-      analyticsRepository.getDimensionBreakdownByUser(userId, 'country'),
+      analyticsRepository.getDimensionBreakdownByUser(userId, 'browser', 8, since),
+      analyticsRepository.getDimensionBreakdownByUser(userId, 'device', 8, since),
+      analyticsRepository.getDimensionBreakdownByUser(userId, 'os', 8, since),
+      analyticsRepository.getDimensionBreakdownByUser(userId, 'country', 8, since),
     ]);
 
   return {

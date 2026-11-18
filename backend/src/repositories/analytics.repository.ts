@@ -52,7 +52,7 @@ export const analyticsRepository = {
   async topLinks(userId: string, limit: number) {
     return UrlModel.aggregate([
       { $match: { userId: toObjectId(userId) } },
-      { $sort: { clicks: -1 } },
+      { $sort: { clicks: -1, _id: 1 } },
       { $limit: limit },
       {
         $project: {
@@ -109,16 +109,22 @@ export const analyticsRepository = {
     ]).exec();
   },
 
-  async getDimensionBreakdown(urlId: string, field: string, limit = 8) {
+  async getDimensionBreakdown(urlId: string, field: string, limit = 8, since?: Date) {
     if (!DIMENSIONS.has(field)) return [];
     return AnalyticsModel.aggregate<{ name: string; value: number; countryCode?: string }>([
-      { $match: { urlId: toObjectId(urlId) } },
-      { $group: { _id: `$${field}`, value: { $sum: 1 } } },
+      { $match: { urlId: toObjectId(urlId), ...(since ? { clickedAt: { $gte: since } } : {}) } },
+      {
+        $group: {
+          _id: field === 'referrer' ? { $ifNull: ['$referrer', 'Direct'] } : `$${field}`,
+          value: { $sum: 1 },
+          ...(field === 'country' ? { countryCode: { $first: '$countryCode' } } : {}),
+        },
+      },
       {
         $project: {
           name: '$_id',
           value: 1,
-          countryCode: field === 'country' ? '$countryCode' : undefined,
+          ...(field === 'country' ? { countryCode: '$countryCode' } : {}),
           _id: 0,
         },
       },
@@ -147,16 +153,22 @@ export const analyticsRepository = {
   },
 
   /** Dimension breakdown across ALL of a user's links. */
-  async getDimensionBreakdownByUser(userId: string, field: string, limit = 8) {
+  async getDimensionBreakdownByUser(userId: string, field: string, limit = 8, since?: Date) {
     if (!DIMENSIONS.has(field)) return [];
     return AnalyticsModel.aggregate<{ name: string; value: number; countryCode?: string }>([
-      { $match: { userId: toObjectId(userId) } },
-      { $group: { _id: `$${field}`, value: { $sum: 1 } } },
+      { $match: { userId: toObjectId(userId), ...(since ? { clickedAt: { $gte: since } } : {}) } },
+      {
+        $group: {
+          _id: field === 'referrer' ? { $ifNull: ['$referrer', 'Direct'] } : `$${field}`,
+          value: { $sum: 1 },
+          ...(field === 'country' ? { countryCode: { $first: '$countryCode' } } : {}),
+        },
+      },
       {
         $project: {
           name: '$_id',
           value: 1,
-          countryCode: field === 'country' ? '$countryCode' : undefined,
+          ...(field === 'country' ? { countryCode: '$countryCode' } : {}),
           _id: 0,
         },
       },

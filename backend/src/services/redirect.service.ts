@@ -4,7 +4,15 @@ import { ApiError } from '../utils/ApiError';
 import { env } from '../config/env';
 
 export type ResolveResult =
-  | { status: 'ok'; originalUrl: string; urlId: string; userId: string; maxClicks: number | null }
+  | {
+      status: 'ok';
+      originalUrl: string;
+      urlId: string;
+      userId: string;
+      maxClicks: number | null;
+      /** True when this redirect already consumed one click of the budget. */
+      clickClaimed: boolean;
+    }
   | { status: 'expired' }
   | { status: 'inactive' };
 
@@ -43,10 +51,15 @@ const inflightLookups = new Map<string, Promise<ResolveResult>>();
  *
  * Expired/inactive links are deactivated eagerly so a single DB sweep
  * (or the next hit) re-syncs state, and the cache is invalidated on change.
+ *
+ * Click budgets are enforced by an atomic claim (see claimClick): a capped
+ * link costs one MongoDB write per redirect, which is the price of a cap
+ * that cannot overshoot. Uncapped links keep the cache-only fast path.
  */
 export async function resolveShortCode(code: string): Promise<ResolveResult> {
   const cached = await cacheService.getShortCode(code);
 
+  let resolved: ResolveResult;
   if (cached.status === 'negative') {
     throw ApiError.notFound('Short link not found');
   }
@@ -61,27 +74,65 @@ export async function resolveShortCode(code: string): Promise<ResolveResult> {
       return { status: 'expired' };
     }
 
-    return {
+    resolved = {
       status: 'ok',
       originalUrl: data.originalUrl,
       urlId: data.id,
       userId: data.userId,
       maxClicks: data.maxClicks,
+      clickClaimed: false,
     };
+  } else {
+    // Cache miss -> database lookup, coalesced with any identical lookup
+    // already in flight.
+    const pending = inflightLookups.get(code);
+    if (pending) {
+      resolved = await pending;
+    } else {
+      const lookup = loadFromDatabase(code);
+      inflightLookups.set(code, lookup);
+      try {
+        resolved = await lookup;
+      } finally {
+        inflightLookups.delete(code);
+      }
+    }
   }
 
-  // Cache miss -> database lookup, coalesced with any identical lookup
-  // already in flight.
-  const pending = inflightLookups.get(code);
-  if (pending) return pending;
+  if (resolved.status !== 'ok' || resolved.maxClicks == null) return resolved;
 
-  const lookup = loadFromDatabase(code);
-  inflightLookups.set(code, lookup);
-  try {
-    return await lookup;
-  } finally {
-    inflightLookups.delete(code);
+  // Capped link: claim one click atomically. The claim — not the cached
+  // click count — is authoritative, so concurrent redirects cannot
+  // overshoot the budget.
+  const claimed = await urlRepository.claimClick(resolved.urlId, resolved.maxClicks);
+  if (claimed) {
+    if (!claimed.isActive) {
+      await cacheService.invalidateShortCode(code);
+    }
+    return { ...resolved, clickClaimed: true };
   }
+
+  // Claim failed: re-read to tell budget-exhausted from inactive/deleted.
+  // (A stale cap can also cause a failed claim when the cap was just
+  // raised; retry once with the fresh cap before giving up.)
+  const fresh = await urlRepository.findByShortCode(code);
+  if (!fresh) throw ApiError.notFound('Short link not found');
+  if (fresh.isActive && fresh.maxClicks != null && fresh.clicks < fresh.maxClicks) {
+    const retry = await urlRepository.claimClick(fresh.id, fresh.maxClicks);
+    if (retry) {
+      if (!retry.isActive) {
+        await cacheService.invalidateShortCode(code);
+      }
+      return { ...resolved, maxClicks: fresh.maxClicks, clickClaimed: true };
+    }
+  }
+  if (fresh.maxClicks != null && fresh.clicks >= fresh.maxClicks) {
+    await urlRepository.deactivate(fresh.id);
+    await cacheService.invalidateShortCode(code);
+    return { status: 'expired' };
+  }
+  if (!fresh.isActive) return { status: 'inactive' };
+  return { status: 'expired' };
 }
 
 async function loadFromDatabase(code: string): Promise<ResolveResult> {
@@ -109,5 +160,6 @@ async function loadFromDatabase(code: string): Promise<ResolveResult> {
     urlId: url.id,
     userId: url.userId.toString(),
     maxClicks: url.maxClicks,
+    clickClaimed: false,
   };
 }

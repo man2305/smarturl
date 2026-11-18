@@ -65,7 +65,32 @@ export const urlRepository = {
   ): Promise<void> {
     await UrlModel.updateOne(
       { _id: id },
-      { $inc: { clicks, uniqueVisitors } }
+      { $inc: { clicks: Math.max(0, clicks), uniqueVisitors: Math.max(0, uniqueVisitors) } }
+    ).exec();
+  },
+
+  /**
+   * Atomically claim one click against a link's budget. The filter only
+   * matches while clicks are below the cap, so exactly (cap - clicks)
+   * concurrent claims succeed — the cap cannot overshoot. The same update
+   * deactivates the link the moment the cap is reached. Returns the
+   * updated document, or null when the budget is spent (or the link is
+   * inactive/gone).
+   */
+  async claimClick(id: string, maxClicks: number): Promise<IUrlDoc | null> {
+    return UrlModel.findOneAndUpdate(
+      { _id: id, isActive: true, clicks: { $lt: maxClicks } },
+      [
+        {
+          $set: {
+            clicks: { $add: ['$clicks', 1] },
+            isActive: {
+              $cond: [{ $gte: [{ $add: ['$clicks', 1] }, maxClicks] }, false, true],
+            },
+          },
+        },
+      ],
+      { new: true }
     ).exec();
   },
 

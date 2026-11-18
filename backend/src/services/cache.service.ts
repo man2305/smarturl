@@ -90,17 +90,24 @@ export const cacheService = {
   /**
    * Tracks unique visitors with a Redis set per URL.
    * Returns `true` the first time an IP visits a URL, `false` otherwise.
+   * Unlike the cache reads, this THROWS on Redis errors: silently
+   * returning false would undercount unique visitors, so the caller
+   * falls back to the database check instead.
    */
   async isNewVisitor(urlId: string, ip: string): Promise<boolean> {
     const client = redisClient();
-    if (!client) return false;
-    try {
-      const key = `uv:${urlId}`;
-      const added = await client.sadd(key, ip);
-      await client.expire(key, UNIQUE_VISITOR_TTL);
-      return added === 1;
-    } catch {
-      return false;
+    if (!client) throw new Error('Redis client unavailable');
+    const key = `uv:${urlId}`;
+    const added = await client.sadd(key, ip);
+    if (added === 1) {
+      // Self-healing expiry: only set EXPIRE when the key has none, so a
+      // failed EXPIRE is retried by the next new visitor instead of
+      // leaving the key to grow without a TTL. (This also makes the
+      // window fixed at 30 days from the first visitor, rather than
+      // sliding with every visit.)
+      const ttl = await client.ttl(key);
+      if (ttl === -1) await client.expire(key, UNIQUE_VISITOR_TTL);
     }
+    return added === 1;
   },
 };
