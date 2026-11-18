@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import { Types } from 'mongoose';
 import { userRepository } from '../repositories/user.repository';
 import { RefreshTokenModel } from '../models/RefreshToken.model';
 import { ApiError } from '../utils/ApiError';
 import { serializeUser, type PublicUser } from '../utils/serializers';
+import { REFRESH_REUSE_GRACE_MS } from '../config/constants';
 import {
   signAccessToken,
   signRefreshToken,
@@ -40,7 +42,7 @@ const toPublicUser = (u: PublicUserLike): PublicUser =>
     createdAt: u.createdAt,
   });
 
-async function issueTokens(userId: string): Promise<AuthTokens> {
+async function issueTokens(userId: string, family?: string): Promise<AuthTokens> {
   const accessToken = signAccessToken(userId);
   const refreshToken = signRefreshToken(userId);
 
@@ -48,6 +50,7 @@ async function issueTokens(userId: string): Promise<AuthTokens> {
     token: hashToken(refreshToken),
     userId: new Types.ObjectId(userId),
     expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+    family: family ?? crypto.randomUUID(),
   });
 
   return { accessToken, refreshToken };
@@ -58,11 +61,20 @@ export const authService = {
     const existing = await userRepository.findByEmail(input.email);
     if (existing) throw ApiError.conflict('An account with this email already exists');
 
-    const user = await userRepository.create({
-      name: input.name,
-      email: input.email,
-      password: input.password,
-    });
+    let user;
+    try {
+      user = await userRepository.create({
+        name: input.name,
+        email: input.email,
+        password: input.password,
+      });
+    } catch (err) {
+      // Unique-index violation = a concurrent registration won the race.
+      if ((err as { code?: number })?.code === 11000) {
+        throw ApiError.conflict('An account with this email already exists');
+      }
+      throw err;
+    }
 
     const tokens = await issueTokens(user.id);
     return { user: toPublicUser(user), tokens };
@@ -79,7 +91,16 @@ export const authService = {
     return { user: toPublicUser(user), tokens };
   },
 
-  /** Refresh-token rotation: old token is revoked, a new pair is issued. */
+  /**
+   * Refresh-token rotation, atomic: the presented token is claimed with a
+   * single findOneAndUpdate that only matches unrotated tokens, so exactly
+   * one of any concurrent refreshes with the same token succeeds. The
+   * rotated token is kept (marked with rotatedAt) instead of deleted, which
+   * makes reuse detectable: presenting it again after the grace window
+   * revokes the whole token family (likely theft). A token that is simply
+   * unknown (logged out, never issued) is rejected without revoking
+   * anything, so a stale client cannot nuke unrelated sessions.
+   */
   async refresh(refreshToken: string): Promise<AuthResult> {
     if (!refreshToken) throw ApiError.unauthorized('Refresh token required');
 
@@ -90,16 +111,33 @@ export const authService = {
       throw ApiError.unauthorized('Invalid refresh token');
     }
 
-    const stored = await RefreshTokenModel.findOne({ token: hashToken(refreshToken) });
-    if (!stored) throw ApiError.unauthorized('Invalid refresh token');
-    if (stored.expiresAt.getTime() < Date.now()) throw ApiError.unauthorized('Refresh token expired');
+    const hashed = hashToken(refreshToken);
+    const claimed = await RefreshTokenModel.findOneAndUpdate(
+      { token: hashed, rotatedAt: null },
+      { $set: { rotatedAt: new Date() } },
+      { new: true }
+    ).exec();
 
-    const user = await userRepository.findById(payload.sub);
-    if (!user) throw ApiError.unauthorized('Account no longer exists');
+    if (claimed) {
+      if (claimed.expiresAt.getTime() < Date.now()) {
+        throw ApiError.unauthorized('Refresh token expired');
+      }
+      const user = await userRepository.findById(payload.sub);
+      if (!user) throw ApiError.unauthorized('Account no longer exists');
 
-    await RefreshTokenModel.deleteOne({ _id: stored._id });
-    const tokens = await issueTokens(user.id);
-    return { user: toPublicUser(user), tokens };
+      const tokens = await issueTokens(user.id, claimed.family ?? undefined);
+      return { user: toPublicUser(user), tokens };
+    }
+
+    const existing = await RefreshTokenModel.findOne({ token: hashed }).exec();
+    if (existing?.rotatedAt) {
+      const ageMs = Date.now() - existing.rotatedAt.getTime();
+      if (ageMs > REFRESH_REUSE_GRACE_MS && existing.family) {
+        await RefreshTokenModel.deleteMany({ family: existing.family }).exec();
+      }
+      throw ApiError.unauthorized('Refresh token reuse detected');
+    }
+    throw ApiError.unauthorized('Invalid refresh token');
   },
 
   async logout(refreshToken: string): Promise<void> {

@@ -26,3 +26,12 @@ export const ALIAS_REGEX = /^[a-zA-Z0-9_-]{3,32}$/;
 
 /** Random slug collision retries before giving up. */
 export const SHORT_CODE_MAX_ATTEMPTS = 5;
+
+/**
+ * Reuse grace window for refresh tokens (ms). A token presented again
+ * within this window after rotation is treated as a concurrent legitimate
+ * refresh (e.g. two tabs) and rejected without revoking the family;
+ * reuse after the window is treated as token theft and revokes the
+ * whole token family.
+ */
+export const REFRESH_REUSE_GRACE_MS = 30_000;
