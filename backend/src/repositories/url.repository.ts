@@ -73,14 +73,21 @@ export const urlRepository = {
     await UrlModel.updateOne({ _id: id }, { $set: { isActive: false } }).exec();
   },
 
-  /** Sweep: deactivate links whose date or click budget has been reached. */
+  /**
+   * Sweep: deactivate links whose date or click budget has been reached.
+   * The null guards are load-bearing: in $expr semantics null sorts below
+   * every date, so `$lte: ['$expiresAt', now]` without a guard matches
+   * every permanent link and the sweeper would deactivate all of them.
+   * The plain-query form also lets Mongo use the { expiresAt: 1 } index.
+   */
   async deactivateExpired(now = new Date()): Promise<number> {
     const result = await UrlModel.updateMany(
       {
         isActive: true,
-        $expr: {
-          $or: [{ $lte: ['$expiresAt', now] }, { $and: [{ $ne: ['$maxClicks', null] }, { $gte: ['$clicks', '$maxClicks'] }] }],
-        },
+        $or: [
+          { expiresAt: { $ne: null, $lte: now } },
+          { maxClicks: { $ne: null }, $expr: { $gte: ['$clicks', '$maxClicks'] } },
+        ],
       },
       { $set: { isActive: false } }
     ).exec();
