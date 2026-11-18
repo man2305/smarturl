@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, ExternalLink, Link2, MousePointerClick, Users } from 'lucide-react';
+import axios from 'axios';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarDays,
+  ExternalLink,
+  Link2,
+  MousePointerClick,
+  Users,
+} from 'lucide-react';
 import { AppShell } from '@/components/layout/topbar';
 import { PageHeader } from '@/components/page-header';
 import { StatCard } from '@/components/stat-card';
@@ -28,7 +37,37 @@ export default function LinkDetailsPage() {
   const [days, setDays] = useState(30);
   const [qrOpen, setQrOpen] = useState(false);
 
-  const { data, isLoading } = useUrlStats(id, days);
+  const { data, isLoading, isError, error, refetch } = useUrlStats(id, days);
+
+  if (isError) {
+    // Only a 404/400 means "not found"; anything else is a transient
+    // failure and must say so (with a retry) instead of claiming the
+    // link was deleted.
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    const notFound = status === 404 || status === 400;
+    return (
+      <AppShell>
+        <EmptyState
+          icon={notFound ? Link2 : AlertTriangle}
+          title={notFound ? 'Link not found' : "Couldn't load this link"}
+          description={
+            notFound
+              ? "This link may have been deleted or you don't have access to it."
+              : 'The request failed. Check your connection and try again.'
+          }
+          action={
+            notFound ? (
+              <Button asChild>
+                <Link to="/dashboard">Back to dashboard</Link>
+              </Button>
+            ) : (
+              <Button onClick={() => void refetch()}>Retry</Button>
+            )
+          }
+        />
+      </AppShell>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -64,7 +103,12 @@ export default function LinkDetailsPage() {
   }
 
   const url = data.url;
-  const avgPerDay = days > 0 ? Math.round(data.totalClicks / days) : 0;
+  // totalClicks is all-time, so the average is over the link's age — not
+  // over the selected chart window (dividing an all-time total by 7 days
+  // would inflate the figure ~4x for a month-old link).
+  const createdAt = url.createdAt ? new Date(url.createdAt).getTime() : Date.now();
+  const ageDays = Math.max(1, Math.ceil((Date.now() - createdAt) / 86400000));
+  const avgPerDay = Math.round(data.totalClicks / ageDays);
 
   return (
     <AppShell>
@@ -119,7 +163,7 @@ export default function LinkDetailsPage() {
         <div className="grid grid-cols-1 flex-1 gap-4 sm:grid-cols-3">
           <StatCard icon={MousePointerClick} label="Total clicks" value={data.totalClicks} />
           <StatCard icon={Users} label="Unique visitors" value={url.uniqueVisitors} />
-          <StatCard icon={CalendarDays} label="Avg clicks / day" value={avgPerDay} />
+          <StatCard icon={CalendarDays} label="Avg clicks / day" value={avgPerDay} hint="since creation" />
         </div>
         <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
           <SelectTrigger className="w-36 sm:mt-1">

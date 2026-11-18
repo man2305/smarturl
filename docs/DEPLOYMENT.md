@@ -136,12 +136,12 @@ login/refresh work across the two domains.
 ## Production hardening checklist (all already in code)
 
 - [x] Docker runs as a non-root user, `NODE_ENV=production`, `HEALTHCHECK` on `/api/health`
-- [x] Fail-fast env validation (refuses dev defaults in production)
+- [x] Fail-fast env validation (refuses dev defaults in production; validates `NODE_ENV`, secret strength/equality, numeric caps, and JWT expiry strings at boot)
 - [x] Graceful shutdown on SIGTERM/SIGINT
 - [x] `helmet`, scoped CORS + credentials, mongo-sanitize, per-endpoint rate limiting
 - [x] `httpOnly` + `secure` + `sameSite: none` refresh cookie
 - [x] Redis degrades to DB-only; analytics failures never break redirects
-- [x] CI gates every push (typecheck + build + Docker build)
+- [x] CI gates every push (typecheck + tests + build + Docker build)
 
 ## Manual deploy (no platform) — Docker Compose
 

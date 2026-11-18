@@ -25,7 +25,9 @@ export function StatCard({ icon: Icon, label, value, hint, loading, className }:
         {loading ? (
           <Skeleton className="mt-3 h-8 w-24" />
         ) : (
-          <div className="mt-2 text-3xl font-bold tracking-tight">{value}</div>
+          <div className="mt-2 text-3xl font-bold tracking-tight">
+            {typeof value === 'number' ? value.toLocaleString() : value}
+          </div>
         )}
         {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>

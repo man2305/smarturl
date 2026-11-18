@@ -30,44 +30,51 @@ export interface Paginated<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
-async function generateUniqueCode(): Promise<string> {
-  for (let attempt = 0; attempt < SHORT_CODE_MAX_ATTEMPTS; attempt++) {
-    const code = generateShortCode();
-    const existing = await urlRepository.findByShortCode(code);
-    if (!existing) return code;
-  }
-  throw ApiError.internal('Failed to generate a unique short code');
-}
-
 export const urlService = {
   async shorten(input: ShortenInput): Promise<SerializedUrl> {
     const isCustom = Boolean(input.customAlias);
-    const shortCode = isCustom ? (input.customAlias as string).trim() : await generateUniqueCode();
+    const alias = isCustom ? (input.customAlias as string).trim() : null;
 
-    let url;
-    try {
-      url = await urlRepository.create({
-        originalUrl: input.originalUrl,
-        shortCode,
-        isCustom,
-        userId: new Types.ObjectId(input.userId),
-        clicks: 0,
-        uniqueVisitors: 0,
-        isActive: true,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-        maxClicks: input.maxClicks ?? null,
-      });
-    } catch (err) {
-      // Unique-index violation = alias race/late collision -> friendly 409.
-      if ((err as { code?: number })?.code === 11000) {
-        throw ApiError.conflict(`Short code "${shortCode}" is already taken`);
+    // Custom aliases are tried once: a collision is the user's choice
+    // conflicting with an existing slug, so it is a 409. Random codes are
+    // retried with a fresh code on collision — the unique index, not a
+    // pre-check, is the authority, so a late collision must not surface
+    // as "already taken" to a user who never chose the code.
+    const attempts = isCustom ? 1 : SHORT_CODE_MAX_ATTEMPTS;
+    let lastCode = alias ?? '';
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const shortCode = alias ?? generateShortCode();
+      lastCode = shortCode;
+      try {
+        const url = await urlRepository.create({
+          originalUrl: input.originalUrl,
+          shortCode,
+          isCustom,
+          userId: new Types.ObjectId(input.userId),
+          clicks: 0,
+          uniqueVisitors: 0,
+          isActive: true,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          maxClicks: input.maxClicks ?? null,
+        });
+
+        // Write-through cache so the very first redirect is already served from Redis.
+        await cacheService.setShortCode(shortCode, toCachePayload(url), env.cacheTtl);
+        return serializeUrl(url);
+      } catch (err) {
+        if ((err as { code?: number })?.code === 11000) {
+          if (isCustom) {
+            throw ApiError.conflict(`Short code "${shortCode}" is already taken`);
+          }
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
 
-    // Write-through cache so the very first redirect is already served from Redis.
-    await cacheService.setShortCode(shortCode, toCachePayload(url), env.cacheTtl);
-    return serializeUrl(url);
+    throw ApiError.internal(
+      `Failed to generate a unique short code after ${attempts} attempts (last tried "${lastCode}")`
+    );
   },
 
   async list(userId: string, query: ListQuery): Promise<Paginated<SerializedUrl>> {
@@ -82,10 +89,14 @@ export const urlService = {
     const status: ListUrlsParams['status'] = ['active', 'expired'].includes(query.status ?? '')
       ? (query.status as ListUrlsParams['status'])
       : 'all';
+    // Query params can arrive as objects/arrays (?search[$gt]=...); only a
+    // string is a search term, anything else is ignored (never .trim()ed).
+    const search =
+      typeof query.search === 'string' ? query.search.trim().slice(0, 100) || undefined : undefined;
 
     const { items, total } = await urlRepository.list({
       userId,
-      search: query.search,
+      search,
       page,
       limit,
       sortBy,
@@ -114,11 +125,11 @@ export const urlService = {
     userId: string,
     id: string,
     patch: {
-      originalUrl?: string;
-      customAlias?: string;
+      originalUrl?: string | null;
+      customAlias?: string | null;
       expiresAt?: string | null;
       maxClicks?: number | null;
-      isActive?: boolean;
+      isActive?: boolean | null;
     }
   ): Promise<SerializedUrl> {
     const existing = await urlRepository.findByIdAndUser(id, userId);
@@ -133,18 +144,21 @@ export const urlService = {
       isActive: boolean;
     }> = {};
 
-    if (patch.originalUrl !== undefined) update.originalUrl = patch.originalUrl;
+    // `null` means "not provided" for these fields (the validator allows
+    // null); only expiresAt/maxClicks treat null as "clear the value".
+    if (patch.originalUrl != null) update.originalUrl = patch.originalUrl;
 
-    if (patch.customAlias !== undefined) {
+    let aliasChanged = false;
+    if (patch.customAlias != null) {
       const alias = patch.customAlias.trim();
       if (alias !== existing.shortCode) {
         const collision = await urlRepository.findByShortCode(alias);
         if (collision && collision.id !== id) {
           throw ApiError.conflict(`Short code "${alias}" is already taken`);
         }
-        await cacheService.invalidateShortCode(existing.shortCode);
         update.shortCode = alias;
         update.isCustom = true;
+        aliasChanged = true;
       }
     }
 
@@ -152,11 +166,26 @@ export const urlService = {
       update.expiresAt = patch.expiresAt ? new Date(patch.expiresAt) : null;
     }
     if (patch.maxClicks !== undefined) update.maxClicks = patch.maxClicks ?? null;
-    if (patch.isActive !== undefined) update.isActive = patch.isActive;
+    if (patch.isActive != null) update.isActive = patch.isActive;
 
-    const updated = await urlRepository.updateById(id, update);
+    let updated;
+    try {
+      updated = await urlRepository.updateById(id, update);
+    } catch (err) {
+      // Unique-index violation = a concurrent rename won the race; the
+      // pre-check above is only a fast path, the index is the guarantee.
+      if ((err as { code?: number })?.code === 11000) {
+        throw ApiError.conflict(`Short code "${update.shortCode}" is already taken`);
+      }
+      throw err;
+    }
     if (!updated) throw ApiError.notFound('URL not found');
 
+    // Cache changes only after the DB update succeeded: invalidating the
+    // old slug first would drop the cache for a rename that then fails.
+    if (aliasChanged) {
+      await cacheService.invalidateShortCode(existing.shortCode);
+    }
     await cacheService.invalidateShortCode(updated.shortCode);
     if (updated.isActive) {
       await cacheService.setShortCode(updated.shortCode, toCachePayload(updated), env.cacheTtl);
@@ -168,11 +197,12 @@ export const urlService = {
     const existing = await urlRepository.findByIdAndUser(id, userId);
     if (!existing) throw ApiError.notFound('URL not found');
 
-    // Cascade delete analytics + link, then drop the cached entry.
-    await Promise.all([
-      analyticsRepository.deleteByUrlId(existing.id),
-      urlRepository.deleteById(existing.id),
-      cacheService.invalidateShortCode(existing.shortCode),
-    ]);
+    // Strictly sequential, in retry-safe order. Analytics first: if the
+    // URL delete then fails, the link survives and the user can retry.
+    // The cache is invalidated last, after the row is gone, so a redirect
+    // landing mid-delete cannot re-populate the cache from the live row.
+    await analyticsRepository.deleteByUrlId(existing.id);
+    await urlRepository.deleteById(existing.id);
+    await cacheService.invalidateShortCode(existing.shortCode);
   },
 };

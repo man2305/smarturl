@@ -1,21 +1,39 @@
 import { body, param } from 'express-validator';
-import { ALIAS_REGEX } from '../config/constants';
+import { ALIAS_REGEX, RESERVED_ALIASES } from '../config/constants';
 
-const validUrl = body('originalUrl')
-  .optional({ values: 'null' })
-  .trim()
-  .isURL({
-    protocols: ['http', 'https'],
-    require_protocol: true,
-    require_tld: true,
-  })
-  .withMessage('A valid http(s) URL is required');
+// Creation requires the destination; updates may omit it (PATCH semantics).
+function urlChain(required: boolean) {
+  const chain = body('originalUrl');
+  if (required) {
+    chain.notEmpty().withMessage('originalUrl is required').bail();
+  } else {
+    chain.optional({ values: 'null' });
+  }
+  return chain
+    .trim()
+    .isURL({
+      protocols: ['http', 'https'],
+      require_protocol: true,
+      require_tld: true,
+    })
+    .withMessage('A valid http(s) URL is required');
+}
+
+const requiredUrl = urlChain(true);
+const validUrl = urlChain(false);
 
 const validAlias = body('customAlias')
   .optional({ values: 'null' })
   .trim()
   .matches(ALIAS_REGEX)
-  .withMessage('Alias must be 3-32 characters: letters, numbers, dash or underscore');
+  .withMessage('Alias must be 3-32 characters: letters, numbers, dash or underscore')
+  .bail()
+  .custom((value) => {
+    if (typeof value === 'string' && RESERVED_ALIASES.has(value.toLowerCase())) {
+      throw new Error(`Alias "${value}" is reserved`);
+    }
+    return true;
+  });
 
 const validExpiresAt = body('expiresAt')
   .optional({ values: 'null' })
@@ -35,7 +53,7 @@ const validMaxClicks = body('maxClicks')
 
 const validId = param('id').isMongoId().withMessage('Invalid id format');
 
-export const shortenUrlValidator = [validUrl, validAlias, validExpiresAt, validMaxClicks];
+export const shortenUrlValidator = [requiredUrl, validAlias, validExpiresAt, validMaxClicks];
 
 export const updateUrlValidator = [
   validId,

@@ -28,7 +28,12 @@ const schema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || /^[a-zA-Z0-9_-]{3,32}$/.test(v), 'Alias: 3-32 chars, letters/numbers/-/_'),
-  expiresAt: z.string().refine((v) => !v || new Date(v).getTime() > Date.now(), 'Expiry must be a future date'),
+  // The future-date rule lives in onSubmit, not here: the pre-filled value
+  // may already be past (the link expired after it was created), and that
+  // must not block saving an unrelated change.
+  expiresAt: z
+    .string()
+    .refine((v) => !v || !Number.isNaN(new Date(v).getTime()), 'Enter a valid date'),
   maxClicks: z
     .string()
     .refine((v) => !v || (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 1_000_000), 'Enter a whole number 1–1,000,000'),
@@ -61,9 +66,19 @@ export function EditUrlDialog({
     handleSubmit,
     reset,
     setValue,
+    setError,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      originalUrl: '',
+      customAlias: '',
+      expiresAt: '',
+      maxClicks: '',
+      isActive: true,
+    },
+  });
 
   useEffect(() => {
     if (url && open) {
@@ -79,6 +94,16 @@ export function EditUrlDialog({
 
   const onSubmit = async (values: FormValues) => {
     if (!url) return;
+    // Only a *changed* expiry must be in the future: an already-expired
+    // link keeps its original (past) value until the user edits it.
+    if (
+      values.expiresAt &&
+      values.expiresAt !== toLocalInputValue(url.expiresAt) &&
+      new Date(values.expiresAt).getTime() <= Date.now()
+    ) {
+      setError('expiresAt', { type: 'validate', message: 'Expiry must be a future date' });
+      return;
+    }
     try {
       await updateUrl.mutateAsync({
         id: url.id,

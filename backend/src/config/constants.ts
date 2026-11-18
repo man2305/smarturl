@@ -18,11 +18,42 @@ export const UNIQUE_VISITOR_TTL = 86400 * 30;
 /** Name of the httpOnly refresh-token cookie. */
 export const REFRESH_TOKEN_COOKIE = 'smarturl_refresh';
 
-/** Cookie max-age: 7 days in ms. */
-export const REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-
 /** Slug character whitelist for custom aliases (URL-safe Base62-ish). */
 export const ALIAS_REGEX = /^[a-zA-Z0-9_-]{3,32}$/;
 
+/**
+ * Aliases that must never be user-chosen: they collide with API routes,
+ * frontend routes, or well-known paths, and a redirect slug at the root
+ * would shadow them.
+ */
+export const RESERVED_ALIASES = new Set([
+  'api',
+  'auth',
+  'login',
+  'logout',
+  'register',
+  'admin',
+  'dashboard',
+  'analytics',
+  'urls',
+  'health',
+  'settings',
+  'link-unavailable',
+  'app',
+  'static',
+  'public',
+  'www',
+  'smarturl',
+]);
+
 /** Random slug collision retries before giving up. */
 export const SHORT_CODE_MAX_ATTEMPTS = 5;
+
+/**
+ * Reuse grace window for refresh tokens (ms). A token presented again
+ * within this window after rotation is treated as a concurrent legitimate
+ * refresh (e.g. two tabs) and rejected without revoking the family;
+ * reuse after the window is treated as token theft and revokes the
+ * whole token family.
+ */
+export const REFRESH_REUSE_GRACE_MS = 30_000;

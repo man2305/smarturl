@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (typecheck + build)
+    name: Backend (typecheck + tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -21,10 +21,12 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run typecheck:tests
+      - run: npm test
       - run: npm run build
 
   frontend:
-    name: Frontend (typecheck + build)
+    name: Frontend (typecheck + tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,6 +40,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
         env:
           # Matches the production API origin; only used to bake the base URL.

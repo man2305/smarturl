@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler';
 import { sendSuccess } from '../utils/ApiResponse';
 import { authService } from '../services/auth.service';
-import { REFRESH_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE_MAX_AGE } from '../config/constants';
+import { REFRESH_TOKEN_COOKIE } from '../config/constants';
 import { env } from '../config/env';
 
 function setRefreshCookie(res: Response, token: string): void {
@@ -10,7 +10,7 @@ function setRefreshCookie(res: Response, token: string): void {
     httpOnly: true,
     secure: env.isProduction,
     sameSite: env.isProduction ? 'none' : 'lax',
-    maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
+    maxAge: env.jwt.refreshTtlMs,
     path: '/api/auth',
   });
 }

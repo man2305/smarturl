@@ -1,17 +1,5 @@
 /** Shared API contract types mirroring the backend serializers. */
 
-export interface ApiEnvelope<T> {
-  success: boolean;
-  message?: string;
-  data: T;
-  meta?: {
-    page?: number;
-    limit?: number;
-    total?: number;
-    totalPages?: number;
-  };
-}
-
 export interface User {
   id: string;
   name: string;

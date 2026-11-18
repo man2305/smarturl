@@ -1,8 +1,15 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { API_BASE } from '@/lib/constants';
+import type { User } from '@/types';
 
 interface RetriableConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
+}
+
+/** What POST /auth/refresh returns: the user plus a fresh access token. */
+export interface RefreshSessionPayload {
+  user: User;
+  accessToken: string;
 }
 
 /**
@@ -18,7 +25,7 @@ const api = axios.create({
 });
 
 let accessToken: string | null = null;
-let refreshPromise: Promise<string> | null = null;
+let refreshPromise: Promise<RefreshSessionPayload> | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
@@ -40,15 +47,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-async function refreshAccessToken(): Promise<string> {
+/**
+ * Single-flighted refresh shared by the boot restore (auth-context) and
+ * the 401 interceptor below. The backend rotates refresh tokens, so two
+ * uncoordinated refreshes with the same token race: the loser gets a 401
+ * and looks like a dead session (StrictMode double-mounts the boot effect
+ * in dev; two tabs can boot at once in production). Sharing one promise
+ * makes every concurrent refresh a single server call.
+ */
+export async function refreshSession(): Promise<RefreshSessionPayload> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true })
       .then((res) => {
-        const token = res.data?.data?.accessToken as string | undefined;
-        if (!token) throw new Error('No access token in refresh response');
-        setAccessToken(token);
-        return token;
+        const payload = res.data?.data as RefreshSessionPayload | undefined;
+        if (!payload?.accessToken) throw new Error('No access token in refresh response');
+        setAccessToken(payload.accessToken);
+        return payload;
       })
       .finally(() => {
         refreshPromise = null;
@@ -67,7 +82,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && original && !original._retry && !isAuthEndpoint) {
       original._retry = true;
       try {
-        const token = await refreshAccessToken();
+        const { accessToken: token } = await refreshSession();
         original.headers.Authorization = `Bearer ${token}`;
         return api(original);
       } catch {
