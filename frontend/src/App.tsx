@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { GuestRoute } from '@/components/guest-route';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 // Code-split every page so the initial bundle stays small.
 const LandingPage = lazy(() => import('@/pages/landing'));
@@ -24,52 +25,54 @@ function PageLoader() {
 
 export default function App() {
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route
-          path="/login"
-          element={
-            <GuestRoute>
-              <LoginPage />
-            </GuestRoute>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <GuestRoute>
-              <RegisterPage />
-            </GuestRoute>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/analytics"
-          element={
-            <ProtectedRoute>
-              <AnalyticsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/links/:id"
-          element={
-            <ProtectedRoute>
-              <LinkDetailsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/link-unavailable" element={<LinkUnavailablePage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/login"
+            element={
+              <GuestRoute>
+                <LoginPage />
+              </GuestRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <GuestRoute>
+                <RegisterPage />
+              </GuestRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/links/:id"
+            element={
+              <ProtectedRoute>
+                <LinkDetailsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/link-unavailable" element={<LinkUnavailablePage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

@@ -39,6 +39,9 @@ export function useUpdateUrl() {
     onSuccess: (_url, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['urls'] });
       queryClient.invalidateQueries({ queryKey: ['analytics', id] });
+      // Toggling a link active/inactive changes the dashboard's
+      // "Active links" stat.
+      queryClient.invalidateQueries({ queryKey: ['overview'] });
       toast.success('Link updated');
     },
     onError: (err) => {
@@ -51,9 +54,10 @@ export function useDeleteUrl() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => urlsApi.remove(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['urls'] });
       queryClient.invalidateQueries({ queryKey: ['overview'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics', id] });
       toast.success('Link deleted');
     },
     onError: (err) => {
@@ -64,8 +68,15 @@ export function useDeleteUrl() {
 
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) return response.data.message;
+    const data = (
+      error as {
+        response?: { data?: { message?: string; errors?: { field: string; message: string }[] } };
+      }
+    ).response?.data;
+    // Validation failures carry per-field messages; surfacing them beats
+    // the generic "Validation failed".
+    if (data?.errors?.length) return data.errors.map((e) => e.message).join('; ');
+    if (data?.message) return data.message;
   }
   if (error instanceof Error && error.message) return error.message;
   return fallback;

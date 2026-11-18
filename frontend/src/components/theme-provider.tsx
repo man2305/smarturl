@@ -21,8 +21,13 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function getInitialTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
-  if (stored === 'light' || stored === 'dark') return stored;
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {
+    // Storage unavailable (private mode / blocked) — fall through to the
+    // media query instead of crashing the render.
+  }
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
@@ -33,7 +38,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     root.style.colorScheme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      /* storage unavailable — the theme still applies for this session */
+    }
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => setThemeState(next), []);
@@ -46,7 +55,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within a ThemeProvider');

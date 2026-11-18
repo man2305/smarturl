@@ -121,12 +121,21 @@ export function Topbar({
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('smarturl:sidebar') === '1');
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('smarturl:sidebar') === '1';
+    } catch {
+      return false;
+    }
+  });
   const toggleCollapse = () => {
-    setCollapsed((c) => {
-      localStorage.setItem('smarturl:sidebar', c ? '0' : '1');
-      return !c;
-    });
+    const next = !collapsed;
+    try {
+      localStorage.setItem('smarturl:sidebar', next ? '1' : '0');
+    } catch {
+      /* storage unavailable — the toggle still applies for this session */
+    }
+    setCollapsed(next);
   };
   return (
     <div className="flex min-h-screen">

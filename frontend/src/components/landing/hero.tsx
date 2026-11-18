@@ -1,23 +1,18 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-
-const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
-function generateCode(): string {
-  let code = '';
-  for (let i = 0; i < 7; i += 1) {
-    code += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
-  return code;
-}
+import { useAuth } from '@/context/auth-context';
+import { useCreateUrl } from '@/hooks/use-urls';
 
 export function Hero() {
   const [url, setUrl] = useState('');
   const [result, setResult] = useState<{ short: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const { status } = useAuth();
+  const createUrl = useCreateUrl();
+  const navigate = useNavigate();
 
   const valid = useMemo(() => {
     try {
@@ -28,11 +23,22 @@ export function Hero() {
     }
   }, [url]);
 
-  const shorten = (e: FormEvent) => {
+  const shorten = async (e: FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    setResult({ short: `${window.location.origin}/${generateCode()}` });
-    setCopied(false);
+    // Shortening requires an account (links are owned); guests go to
+    // signup instead of being handed a fabricated link that 404s.
+    if (status !== 'authenticated') {
+      navigate('/register');
+      return;
+    }
+    try {
+      const created = await createUrl.mutateAsync({ originalUrl: url });
+      setResult({ short: created.shortUrl });
+      setCopied(false);
+    } catch {
+      /* toast handled by the mutation */
+    }
   };
 
   const copy = async () => {
@@ -65,8 +71,13 @@ export function Hero() {
               placeholder="https://example.com/a/very/long/url"
               className="h-12 flex-1"
             />
-            <Button type="submit" size="lg" disabled={!valid} className="sm:w-auto">
-              Shorten
+            <Button
+              type="submit"
+              size="lg"
+              disabled={!valid || createUrl.isPending}
+              className="sm:w-auto"
+            >
+              {status === 'authenticated' ? 'Shorten' : 'Sign up to shorten'}
             </Button>
           </form>
 
@@ -79,17 +90,19 @@ export function Hero() {
             </div>
           )}
 
-          <p className="mt-4 text-sm text-muted-foreground">
-            Want to keep it?{' '}
-            <Link to="/register" className="font-medium text-primary hover:underline">
-              Create a free account
-            </Link>{' '}
-            or{' '}
-            <Link to="/login" className="font-medium text-primary hover:underline">
-              sign in
-            </Link>
-            .
-          </p>
+          {status !== 'authenticated' && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Want to keep it?{' '}
+              <Link to="/register" className="font-medium text-primary hover:underline">
+                Create a free account
+              </Link>{' '}
+              or{' '}
+              <Link to="/login" className="font-medium text-primary hover:underline">
+                sign in
+              </Link>
+              .
+            </p>
+          )}
         </div>
       </div>
     </section>

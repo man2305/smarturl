@@ -7,3 +7,12 @@ import { cleanup } from '@testing-library/react';
 afterEach(() => {
   cleanup();
 });
+
+// jsdom has no ResizeObserver; Radix primitives (Dialog, Select, ...) need
+// one at mount. A no-op stub is enough — no test asserts on layout.
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;

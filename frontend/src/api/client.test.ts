@@ -1,7 +1,7 @@
 import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import api, { setAccessToken, getAccessToken } from './client';
+import api, { setAccessToken, getAccessToken, refreshSession } from './client';
 
 describe('api client', () => {
   let apiMock: MockAdapter;
@@ -58,6 +58,16 @@ describe('api client', () => {
     const [a, b] = await Promise.all([api.get('/urls'), api.get('/urls')]);
     expect(a.data).toEqual({ data: { ok: true } });
     expect(b.data).toEqual({ data: { ok: true } });
+    expect(axiosMock.history.post).toHaveLength(1);
+  });
+
+  it('shares one refresh call between concurrent refreshSession callers', async () => {
+    axiosMock
+      .onPost('/api/auth/refresh')
+      .reply(200, { data: { user: { id: 'u1' }, accessToken: 'fresh' } });
+    const [a, b] = await Promise.all([refreshSession(), refreshSession()]);
+    expect(a.accessToken).toBe('fresh');
+    expect(b.accessToken).toBe('fresh');
     expect(axiosMock.history.post).toHaveLength(1);
   });
 

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './auth-context';
 import { authApi } from '@/api/auth.api';
 import type { User } from '@/types';
@@ -44,17 +45,22 @@ function Probe() {
   );
 }
 
+let queryClient: QueryClient;
+
 function renderProvider() {
   return render(
-    <AuthProvider>
-      <Probe />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   });
 
   it('restores the session on boot when refresh succeeds', async () => {
@@ -118,6 +124,20 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'));
     fireEvent.click(screen.getByText('logout'));
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated'));
+  });
+
+  it('clears cached queries on logout', async () => {
+    mocked.refresh.mockResolvedValue({ user, accessToken: 'tok' });
+    mocked.logout.mockResolvedValue(undefined);
+    queryClient.setQueryData(['urls', { page: 1 }], { items: [], meta: {} });
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'));
+    expect(queryClient.getQueryCache().findAll()).toHaveLength(1);
+    fireEvent.click(screen.getByText('logout'));
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated'));
+    // Without this, the next user on a shared machine briefly sees the
+    // previous user's cached links and stats.
+    expect(queryClient.getQueryCache().findAll()).toHaveLength(0);
   });
 
   it('clears the session on the auth:unauthorized event', async () => {
