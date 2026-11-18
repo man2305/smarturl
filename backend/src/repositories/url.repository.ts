@@ -1,6 +1,19 @@
-import { Types } from 'mongoose';
 import { UrlModel, type IUrl, type IUrlDoc } from '../models/Url.model';
 import type { SortOrder } from './types';
+
+/**
+ * Fields a URL update may change. Counters and ownership are deliberately
+ * excluded: no caller should be able to patch clicks, uniqueVisitors or
+ * userId through the update path.
+ */
+export interface UrlPatch {
+  originalUrl?: string;
+  shortCode?: string;
+  isCustom?: boolean;
+  expiresAt?: Date | null;
+  maxClicks?: number | null;
+  isActive?: boolean;
+}
 
 export interface ListUrlsParams {
   userId: string;
@@ -37,7 +50,7 @@ export const urlRepository = {
     return UrlModel.findOne({ _id: id, userId }).exec();
   },
 
-  async updateById(id: string, patch: Partial<IUrl>): Promise<IUrlDoc | null> {
+  async updateById(id: string, patch: UrlPatch): Promise<IUrlDoc | null> {
     return UrlModel.findByIdAndUpdate(id, patch, { new: true, runValidators: true }).exec();
   },
 

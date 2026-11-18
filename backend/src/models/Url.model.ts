@@ -1,5 +1,6 @@
 import { Schema, model, type Document } from 'mongoose';
 import type { Types } from 'mongoose';
+import { ALIAS_REGEX } from '../config/constants';
 
 export interface IUrl {
   originalUrl: string;
@@ -17,12 +18,14 @@ export interface IUrlDoc extends IUrl, Document {}
 
 const urlSchema = new Schema<IUrlDoc>(
   {
-    originalUrl: { type: String, required: true, trim: true },
+    originalUrl: { type: String, required: true, trim: true, maxlength: 2048 },
     shortCode: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 64,
+      minlength: 3,
+      maxlength: 32,
+      match: ALIAS_REGEX,
     },
     /** True when the user supplied a custom alias instead of a random code. */
     isCustom: { type: Boolean, default: false },
@@ -35,7 +38,7 @@ const urlSchema = new Schema<IUrlDoc>(
     uniqueVisitors: { type: Number, default: 0, min: 0 },
     isActive: { type: Boolean, default: true },
     expiresAt: { type: Date, default: null },
-    maxClicks: { type: Number, default: null, min: 1 },
+    maxClicks: { type: Number, default: null, min: 1, max: 1_000_000 },
   },
   { timestamps: true }
 );

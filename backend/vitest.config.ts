@@ -5,6 +5,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
+    globalSetup: ['tests/globalSetup.ts'],
     testTimeout: 60_000,
     hookTimeout: 60_000,
     // Each test file runs in its own worker (Mongoose models cannot be

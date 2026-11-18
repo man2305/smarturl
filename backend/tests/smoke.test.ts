@@ -6,7 +6,7 @@ describe('smoke: app boots against in-memory MongoDB', () => {
   let api: TestAgent;
 
   beforeAll(async () => {
-    await startTestDb();
+    await startTestDb('smoke');
     api = testAgent();
   });
 
