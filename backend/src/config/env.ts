@@ -53,3 +53,9 @@ export const env = {
     audience: process.env.JWT_AUDIENCE ?? 'smarturl-api',
   },
 } as const;
+
+// The two token types are only distinct if their secrets are distinct:
+// with equal secrets a refresh token could pass as an access token.
+if (env.jwt.accessSecret === env.jwt.refreshSecret) {
+  throw new Error('[env] JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different');
+}

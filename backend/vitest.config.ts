@@ -7,11 +7,10 @@ export default defineConfig({
     setupFiles: ['tests/setup.ts'],
     testTimeout: 60_000,
     hookTimeout: 60_000,
-    // One worker: each test file boots its own in-memory MongoDB, and
-    // parallel mongod processes are too heavy for small CI runners.
-    poolOptions: {
-      forks: { singleFork: true },
-    },
+    // Each test file runs in its own worker (Mongoose models cannot be
+    // compiled twice in one process). Workers are capped because every
+    // file boots its own in-memory mongod.
+    maxWorkers: 2,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
