@@ -24,6 +24,16 @@ function isExpired(p: ExpiryCandidate): boolean {
 }
 
 /**
+ * In-flight database lookups, keyed by slug. When many requests miss the
+ * cache for the same slug at once (cache stampede), they share one lookup
+ * instead of each hitting MongoDB. Entries are removed as soon as the
+ * lookup settles, so a later request re-checks the (now populated) cache.
+ * This is per-process only: across several API instances each instance
+ * still performs one lookup per slug per stampede.
+ */
+const inflightLookups = new Map<string, Promise<ResolveResult>>();
+
+/**
  * The redirect hot path.
  *
  * Cache-aside flow:
@@ -60,7 +70,21 @@ export async function resolveShortCode(code: string): Promise<ResolveResult> {
     };
   }
 
-  // Cache miss -> database lookup (cache-aside).
+  // Cache miss -> database lookup, coalesced with any identical lookup
+  // already in flight.
+  const pending = inflightLookups.get(code);
+  if (pending) return pending;
+
+  const lookup = loadFromDatabase(code);
+  inflightLookups.set(code, lookup);
+  try {
+    return await lookup;
+  } finally {
+    inflightLookups.delete(code);
+  }
+}
+
+async function loadFromDatabase(code: string): Promise<ResolveResult> {
   const url = await urlRepository.findByShortCode(code);
   if (!url) {
     await cacheService.setNotFound(code);

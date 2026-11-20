@@ -24,6 +24,31 @@ export const REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 /** Slug character whitelist for custom aliases (URL-safe Base62-ish). */
 export const ALIAS_REGEX = /^[a-zA-Z0-9_-]{3,32}$/;
 
+/**
+ * Aliases that must never be user-chosen: they collide with API routes,
+ * frontend routes, or well-known paths, and a redirect slug at the root
+ * would shadow them.
+ */
+export const RESERVED_ALIASES = new Set([
+  'api',
+  'auth',
+  'login',
+  'logout',
+  'register',
+  'admin',
+  'dashboard',
+  'analytics',
+  'urls',
+  'health',
+  'settings',
+  'link-unavailable',
+  'app',
+  'static',
+  'public',
+  'www',
+  'smarturl',
+]);
+
 /** Random slug collision retries before giving up. */
 export const SHORT_CODE_MAX_ATTEMPTS = 5;
 

@@ -8,7 +8,7 @@ import morgan from 'morgan';
 import apiRoutes from './routes';
 import redirectRoutes from './routes/redirect.routes';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
-import { apiLimiter, redirectLimiter } from './middlewares/rateLimiter';
+import { apiLimiter } from './middlewares/rateLimiter';
 import { env } from './config/env';
 
 export function createApp(): express.Express {

@@ -22,7 +22,7 @@ describe('auth', () => {
   let api: TestAgent;
 
   beforeAll(async () => {
-    await startTestDb();
+    await startTestDb('auth');
     api = testAgent();
   });
 
