@@ -1,6 +1,19 @@
-import { Types } from 'mongoose';
 import { UrlModel, type IUrl, type IUrlDoc } from '../models/Url.model';
 import type { SortOrder } from './types';
+
+/**
+ * Fields a URL update may change. Counters and ownership are deliberately
+ * excluded: no caller should be able to patch clicks, uniqueVisitors or
+ * userId through the update path.
+ */
+export interface UrlPatch {
+  originalUrl?: string;
+  shortCode?: string;
+  isCustom?: boolean;
+  expiresAt?: Date | null;
+  maxClicks?: number | null;
+  isActive?: boolean;
+}
 
 export interface ListUrlsParams {
   userId: string;
@@ -20,6 +33,11 @@ export interface ListUrlsResult {
 
 const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'clicks', 'uniqueVisitors']);
 
+/** Escape user input before it becomes a $regex: unescaped input is regex injection (e.g. `.*` matches everything) and a ReDoS vector. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export const urlRepository = {
   async create(data: Partial<IUrl>): Promise<IUrlDoc> {
     return UrlModel.create(data);
@@ -37,7 +55,7 @@ export const urlRepository = {
     return UrlModel.findOne({ _id: id, userId }).exec();
   },
 
-  async updateById(id: string, patch: Partial<IUrl>): Promise<IUrlDoc | null> {
+  async updateById(id: string, patch: UrlPatch): Promise<IUrlDoc | null> {
     return UrlModel.findByIdAndUpdate(id, patch, { new: true, runValidators: true }).exec();
   },
 
@@ -52,7 +70,32 @@ export const urlRepository = {
   ): Promise<void> {
     await UrlModel.updateOne(
       { _id: id },
-      { $inc: { clicks, uniqueVisitors } }
+      { $inc: { clicks: Math.max(0, clicks), uniqueVisitors: Math.max(0, uniqueVisitors) } }
+    ).exec();
+  },
+
+  /**
+   * Atomically claim one click against a link's budget. The filter only
+   * matches while clicks are below the cap, so exactly (cap - clicks)
+   * concurrent claims succeed — the cap cannot overshoot. The same update
+   * deactivates the link the moment the cap is reached. Returns the
+   * updated document, or null when the budget is spent (or the link is
+   * inactive/gone).
+   */
+  async claimClick(id: string, maxClicks: number): Promise<IUrlDoc | null> {
+    return UrlModel.findOneAndUpdate(
+      { _id: id, isActive: true, clicks: { $lt: maxClicks } },
+      [
+        {
+          $set: {
+            clicks: { $add: ['$clicks', 1] },
+            isActive: {
+              $cond: [{ $gte: [{ $add: ['$clicks', 1] }, maxClicks] }, false, true],
+            },
+          },
+        },
+      ],
+      { new: true }
     ).exec();
   },
 
@@ -60,14 +103,21 @@ export const urlRepository = {
     await UrlModel.updateOne({ _id: id }, { $set: { isActive: false } }).exec();
   },
 
-  /** Sweep: deactivate links whose date or click budget has been reached. */
+  /**
+   * Sweep: deactivate links whose date or click budget has been reached.
+   * The null guards are load-bearing: in $expr semantics null sorts below
+   * every date, so `$lte: ['$expiresAt', now]` without a guard matches
+   * every permanent link and the sweeper would deactivate all of them.
+   * The plain-query form also lets Mongo use the { expiresAt: 1 } index.
+   */
   async deactivateExpired(now = new Date()): Promise<number> {
     const result = await UrlModel.updateMany(
       {
         isActive: true,
-        $expr: {
-          $or: [{ $lte: ['$expiresAt', now] }, { $and: [{ $ne: ['$maxClicks', null] }, { $gte: ['$clicks', '$maxClicks'] }] }],
-        },
+        $or: [
+          { expiresAt: { $ne: null, $lte: now } },
+          { maxClicks: { $ne: null }, $expr: { $gte: ['$clicks', '$maxClicks'] } },
+        ],
       },
       { $set: { isActive: false } }
     ).exec();
@@ -77,18 +127,38 @@ export const urlRepository = {
   async list(params: ListUrlsParams): Promise<ListUrlsResult> {
     const { userId, search, page, limit, sortBy, sortOrder, status } = params;
 
-    const filter: Record<string, unknown> = { userId };
+    // Status follows the same definition as the dashboard's status badge:
+    // 'expired' is inactive OR past its expiry date, 'active' is active
+    // AND not past expiry. (The sweeper deactivates past-date links hourly,
+    // but the filter must not disagree with the badge in the meantime.)
+    const now = new Date();
+    const conditions: Record<string, unknown>[] = [{ userId }];
     if (search) {
-      filter.$or = [
-        { originalUrl: { $regex: search, $options: 'i' } },
-        { shortCode: { $regex: search, $options: 'i' } },
-      ];
+      const pattern = escapeRegExp(search);
+      conditions.push({
+        $or: [
+          { originalUrl: { $regex: pattern, $options: 'i' } },
+          { shortCode: { $regex: pattern, $options: 'i' } },
+        ],
+      });
     }
-    if (status === 'active') filter.isActive = true;
-    if (status === 'expired') filter.isActive = false;
+    if (status === 'active') {
+      conditions.push({
+        isActive: true,
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+      });
+    }
+    if (status === 'expired') {
+      conditions.push({
+        $or: [{ isActive: false }, { expiresAt: { $ne: null, $lte: now } }],
+      });
+    }
+    const filter = conditions.length > 1 ? { $and: conditions } : conditions[0];
 
     const sortField = SORTABLE_FIELDS.has(sortBy) ? sortBy : 'createdAt';
-    const sort: Record<string, SortOrder> = { [sortField]: sortOrder };
+    // _id tiebreaker: without it, ties on clicks/createdAt resolve
+    // arbitrarily and rows can repeat or vanish across pages.
+    const sort: Record<string, SortOrder> = { [sortField]: sortOrder, _id: 1 };
 
     const [items, total] = await Promise.all([
       UrlModel.find(filter)

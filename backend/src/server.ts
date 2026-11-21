@@ -5,6 +5,19 @@ import { connectDatabase, disconnectDatabase } from './config/database';
 import { connectRedis, disconnectRedis } from './config/redis';
 import { startExpirySweeper } from './services/expirySweeper';
 
+// Last-resort guards: without these, an unhandled rejection or exception
+// crashes the process with no log line at all. Fail fast — the process
+// manager (Render) restarts a clean process.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] unhandled rejection', reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaught exception', err);
+  process.exit(1);
+});
+
 async function bootstrap(): Promise<void> {
   await connectDatabase();
   await connectRedis();
@@ -15,11 +28,24 @@ async function bootstrap(): Promise<void> {
     console.log(`[server] SmartURL API listening on ${env.baseUrl} (${env.nodeEnv})`);
   });
 
+  // listen() errors (e.g. EADDRINUSE) are not catchable via bootstrap().
+  server.on('error', (err) => {
+    console.error('[server] failed to listen', err);
+    process.exit(1);
+  });
+
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log(`[server] received ${signal}, shutting down gracefully...`);
     server.close(async () => {
-      await disconnectDatabase();
-      await disconnectRedis();
+      try {
+        await disconnectDatabase();
+        await disconnectRedis();
+      } catch (err) {
+        console.error('[server] error during shutdown', err);
+      }
       process.exit(0);
     });
     // Hard-exit fallback if lingering connections refuse to close.

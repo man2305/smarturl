@@ -22,11 +22,21 @@ export function parseUserAgent(userAgent: string | undefined): DeviceResult {
   const os = parser.getOS();
   const device = parser.getDevice();
 
+  // Normalise to the dashboard's fixed classes: ua-parser-js returns raw
+  // values (wearable, console, smarttv, ...) that would splinter the
+  // breakdown, and no device type means a desktop-class client.
+  const deviceClass =
+    device.type === 'mobile' || device.type === 'tablet'
+      ? device.type
+      : device.type === undefined
+        ? 'desktop'
+        : 'other';
+
   return {
     browser: browser.name || 'Unknown',
     browserVersion: browser.version || '',
     os: os.name || 'Unknown',
-    device: device.type || 'desktop',
+    device: deviceClass,
     deviceName: device.model || '',
   };
 }

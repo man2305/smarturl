@@ -2,6 +2,7 @@ import { MousePointerClick, Users, Link2, Globe2 } from 'lucide-react';
 import { AppShell } from '@/components/layout/topbar';
 import { PageHeader } from '@/components/page-header';
 import { StatCard } from '@/components/stat-card';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ClicksAreaChart } from '@/components/charts/clicks-area-chart';
@@ -10,15 +11,27 @@ import { BreakdownList } from '@/components/charts/breakdown-list';
 import { useOverview } from '@/hooks/use-analytics';
 
 export default function AnalyticsPage() {
-  const { data, isLoading } = useOverview();
+  const { data, isLoading, isError, refetch } = useOverview();
   const totalClicks = data?.overview.totalClicks ?? 0;
 
   return (
     <AppShell>
       <PageHeader
         title="Analytics"
-        description="Cross-link performance for the last 30 days."
+        description="All-time totals across your links; the trend chart covers the last 30 days."
       />
+
+      {isError && (
+        <div
+          role="alert"
+          className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span>Couldn&apos;t load analytics. Check your connection and try again.</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={MousePointerClick} label="Total clicks" value={totalClicks} loading={isLoading} />

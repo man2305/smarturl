@@ -65,7 +65,7 @@ export function DonutChart({
       </div>
 
       <ul className="space-y-2">
-        {data.slice(0, 6).map((item, i) => (
+        {data.map((item, i) => (
           <li key={item.name} className="flex items-center justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <span

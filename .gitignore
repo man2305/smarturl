@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# Coverage output (also ignored per-package; this covers future packages)
+coverage/
+
 # Env
 .env
 .env.local

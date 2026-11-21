@@ -49,14 +49,14 @@ const userSchema = new Schema<IUserDoc>(
  */
 userSchema.index({ email: 1 }, { unique: true });
 
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
-  return next();
 });
 
 userSchema.methods.comparePassword = async function (candidate: string): Promise<boolean> {
+  if (!this.password) return false;
   return bcrypt.compare(candidate, this.password);
 };
 

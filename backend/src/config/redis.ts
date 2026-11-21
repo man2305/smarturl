@@ -9,6 +9,7 @@ import { env } from './env';
  */
 let client: Redis | null = null;
 let enabled = false;
+let everConnected = false;
 
 export const isRedisEnabled = (): boolean => enabled;
 
@@ -28,23 +29,39 @@ export async function connectRedis(): Promise<void> {
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
       connectTimeout: 5000,
-      retryStrategy: () => null,
+      // Bounded backoff, never give up: a transient outage (common on
+      // free tiers / sleeping hosts) must not leave the app DB-only
+      // until the next restart. Returning null here would do exactly that.
+      retryStrategy: (times) => Math.min(times * 200, 5000),
     });
 
     client.on('error', (err) => {
       enabled = false;
-      if (env.nodeEnv !== 'production') {
-        console.warn('[redis] connection lost - falling back to db-only:', err.message);
+      console.warn('[redis] connection lost - falling back to db-only:', err.message);
+    });
+
+    // Recovery path: ioredis reconnects in the background (see
+    // retryStrategy above); re-enable the cache when it comes back.
+    // (everConnected keeps the first 'ready' at boot from logging as a
+    // reconnect.)
+    client.on('ready', () => {
+      if (everConnected && !enabled) {
+        enabled = true;
+        console.log('[redis] reconnected');
       }
     });
 
     await client.connect();
     await client.ping();
     enabled = true;
+    everConnected = true;
     console.log('[redis] connected');
-  } catch {
+  } catch (err) {
     enabled = false;
-    console.warn('[redis] connection failed - running without cache');
+    console.warn(
+      '[redis] connection failed - running without cache:',
+      err instanceof Error ? err.message : err
+    );
   }
 }
 
