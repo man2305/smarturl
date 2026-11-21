@@ -30,6 +30,7 @@ export const redirect = asyncHandler(async (req: Request, res: Response) => {
     userId: result.userId,
     shortCode: req.params.shortCode,
     maxClicks: result.maxClicks,
+    clickClaimed: result.clickClaimed,
     ip: getClientIp(req),
     userAgent: req.get('user-agent'),
     referrer: req.get('referer') ?? req.get('referrer') ?? undefined,

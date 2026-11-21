@@ -29,7 +29,11 @@ const analyticsSchema = new Schema<IAnalyticsDoc>(
     browser: { type: String, default: 'Unknown' },
     browserVersion: { type: String, default: '' },
     os: { type: String, default: 'Unknown' },
-    device: { type: String, default: 'desktop' },
+    device: {
+      type: String,
+      default: 'desktop',
+      enum: ['desktop', 'mobile', 'tablet', 'other'],
+    },
     deviceName: { type: String, default: '' },
     country: { type: String, default: 'Unknown' },
     countryCode: { type: String, default: '' },
@@ -51,5 +55,10 @@ analyticsSchema.index({ urlId: 1, device: 1 });
 analyticsSchema.index({ urlId: 1, os: 1 });
 analyticsSchema.index({ urlId: 1, country: 1 });
 analyticsSchema.index({ urlId: 1, referrer: 1 });
+// User-level aggregations (overview, recent activity) filter by userId
+// alone; without this they collection-scan the ever-growing click log.
+analyticsSchema.index({ userId: 1, clickedAt: -1 });
+// No-Redis unique-visitor fallback: isFirstVisitByIp counts by (urlId, ip).
+analyticsSchema.index({ urlId: 1, ip: 1 });
 
 export const AnalyticsModel = model<IAnalyticsDoc>('Analytics', analyticsSchema);

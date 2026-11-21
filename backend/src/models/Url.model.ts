@@ -55,5 +55,6 @@ const urlSchema = new Schema<IUrlDoc>(
 urlSchema.index({ shortCode: 1 }, { unique: true });
 urlSchema.index({ userId: 1, createdAt: -1 });
 urlSchema.index({ expiresAt: 1 });
+urlSchema.index({ userId: 1, clicks: -1 });
 
 export const UrlModel = model<IUrlDoc>('Url', urlSchema);
