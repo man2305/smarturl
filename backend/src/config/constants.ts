@@ -18,9 +18,6 @@ export const UNIQUE_VISITOR_TTL = 86400 * 30;
 /** Name of the httpOnly refresh-token cookie. */
 export const REFRESH_TOKEN_COOKIE = 'smarturl_refresh';
 
-/** Cookie max-age: 7 days in ms. */
-export const REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-
 /** Slug character whitelist for custom aliases (URL-safe Base62-ish). */
 export const ALIAS_REGEX = /^[a-zA-Z0-9_-]{3,32}$/;
 

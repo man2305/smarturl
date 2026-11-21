@@ -26,7 +26,6 @@ export function UrlToolbar({ filters, onChange, onCreate }: ToolbarProps) {
       if (searchInput !== (filters.search ?? '')) onChange({ search: searchInput || undefined });
     }, 350);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
   return (

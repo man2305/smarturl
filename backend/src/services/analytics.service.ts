@@ -34,7 +34,7 @@ async function checkNewVisitor(urlId: string, ip: string): Promise<boolean> {
     try {
       return await cacheService.isNewVisitor(urlId, ip);
     } catch {
-      // Fall through to the database check.
+      // Redis failed; fall through to the database check below.
     }
   }
   try {

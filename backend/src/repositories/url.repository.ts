@@ -127,16 +127,33 @@ export const urlRepository = {
   async list(params: ListUrlsParams): Promise<ListUrlsResult> {
     const { userId, search, page, limit, sortBy, sortOrder, status } = params;
 
-    const filter: Record<string, unknown> = { userId };
+    // Status follows the same definition as the dashboard's status badge:
+    // 'expired' is inactive OR past its expiry date, 'active' is active
+    // AND not past expiry. (The sweeper deactivates past-date links hourly,
+    // but the filter must not disagree with the badge in the meantime.)
+    const now = new Date();
+    const conditions: Record<string, unknown>[] = [{ userId }];
     if (search) {
       const pattern = escapeRegExp(search);
-      filter.$or = [
-        { originalUrl: { $regex: pattern, $options: 'i' } },
-        { shortCode: { $regex: pattern, $options: 'i' } },
-      ];
+      conditions.push({
+        $or: [
+          { originalUrl: { $regex: pattern, $options: 'i' } },
+          { shortCode: { $regex: pattern, $options: 'i' } },
+        ],
+      });
     }
-    if (status === 'active') filter.isActive = true;
-    if (status === 'expired') filter.isActive = false;
+    if (status === 'active') {
+      conditions.push({
+        isActive: true,
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+      });
+    }
+    if (status === 'expired') {
+      conditions.push({
+        $or: [{ isActive: false }, { expiresAt: { $ne: null, $lte: now } }],
+      });
+    }
+    const filter = conditions.length > 1 ? { $and: conditions } : conditions[0];
 
     const sortField = SORTABLE_FIELDS.has(sortBy) ? sortBy : 'createdAt';
     // _id tiebreaker: without it, ties on clicks/createdAt resolve

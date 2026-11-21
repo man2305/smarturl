@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler';
+import { ApiError } from '../utils/ApiError';
 import { resolveShortCode } from '../services/redirect.service';
 import { recordClick } from '../services/analytics.service';
 import { getClientIp } from '../utils/ip';
+import { ALIAS_REGEX } from '../config/constants';
 import { env } from '../config/env';
 
 /**
@@ -14,6 +16,13 @@ import { env } from '../config/env';
  * which would otherwise swallow future analytics.
  */
 export const redirect = asyncHandler(async (req: Request, res: Response) => {
+  // Slugs outside the alias shape can never exist (random codes and custom
+  // aliases both match ALIAS_REGEX); reject before touching Redis/Mongo so
+  // junk paths like /favicon.ico don't cost a lookup each.
+  if (!ALIAS_REGEX.test(req.params.shortCode)) {
+    throw ApiError.notFound('Short link not found');
+  }
+
   const result = await resolveShortCode(req.params.shortCode);
 
   res.set('Cache-Control', 'no-store');

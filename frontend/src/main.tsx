@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import axios from 'axios';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/context/auth-context';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -12,7 +13,13 @@ import './index.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      // A 401 means the session is gone (the interceptor already tried a
+      // refresh); retrying just fires another doomed request plus a
+      // second refresh attempt. Other failures get one retry.
+      retry: (failureCount, error) => {
+        if (axios.isAxiosError(error) && error.response?.status === 401) return false;
+        return failureCount < 1;
+      },
       refetchOnWindowFocus: true,
       staleTime: 30_000,
     },

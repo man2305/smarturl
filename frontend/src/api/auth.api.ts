@@ -1,10 +1,6 @@
-import api from './client';
-import type { User } from '@/types';
+import api, { refreshSession, type RefreshSessionPayload } from './client';
 
-export interface AuthPayload {
-  user: User;
-  accessToken: string;
-}
+export type AuthPayload = RefreshSessionPayload;
 
 export interface LoginInput {
   email: string;
@@ -27,16 +23,11 @@ export const authApi = {
   },
 
   async refresh(): Promise<AuthPayload> {
-    const { data } = await api.post('/auth/refresh');
-    return data.data as AuthPayload;
+    // Shared single-flight with the 401 interceptor (see client.ts).
+    return refreshSession();
   },
 
   async logout(): Promise<void> {
     await api.post('/auth/logout');
-  },
-
-  async me(): Promise<User> {
-    const { data } = await api.get('/auth/me');
-    return data.data as User;
   },
 };

@@ -1,6 +1,6 @@
 import { urlRepository } from '../repositories/url.repository';
 
-const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // every hour
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Background job that deactivates links which have passed their expiry date

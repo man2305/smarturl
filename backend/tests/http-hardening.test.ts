@@ -90,4 +90,26 @@ describe('http hardening', () => {
     expect(res.body).toEqual({ success: false, message: 'Resource not found' });
     expect(res.body.stack).toBeUndefined();
   });
+
+  it('returns 404 for /api itself instead of treating it as a slug', async () => {
+    const res = await api.get('/api').expect(404);
+    expect(res.body).toEqual({ success: false, message: 'Resource not found' });
+  });
+
+  it('returns 413 for an oversize JSON payload, not 500', async () => {
+    const res = await api
+      .post('/api/urls')
+      .set(authHeader(user.accessToken))
+      .set('Content-Type', 'application/json')
+      .send(`{"originalUrl": "${'https://example.com/' + 'a'.repeat(2 * 1024 * 1024)}"}`)
+      .expect(413);
+    expect(res.body.message).toBe('Payload too large');
+  });
+
+  it('reports service health from the health endpoint', async () => {
+    const res = await api.get('/api/health').expect(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.services.mongo).toBe('connected');
+    expect(res.body.services.redis).toBe('disabled');
+  });
 });

@@ -7,6 +7,7 @@ process.env.RATE_LIMIT_MAX = '100000';
 process.env.RATE_LIMIT_AUTH_MAX = '100000';
 process.env.RATE_LIMIT_SHORTEN_MAX = '100000';
 process.env.RATE_LIMIT_REDIRECT_MAX = '100000';
+process.env.RATE_LIMIT_REFRESH_MAX = '100000';
 process.env.JWT_ACCESS_SECRET = 'test_access_secret_only';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_only';
 // Vitest/Vite sets BASE_URL='/' in its own environment; pin the app's

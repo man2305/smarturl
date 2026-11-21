@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BarChart3, Link2, MousePointerClick, Users } from 'lucide-react';
 import { AppShell } from '@/components/layout/topbar';
@@ -11,6 +11,7 @@ import { DeleteUrlDialog } from '@/components/urls/delete-url-dialog';
 import { UrlTable } from '@/components/urls/url-table';
 import { UrlToolbar } from '@/components/urls/url-toolbar';
 import { Pagination } from '@/components/pagination';
+import { Button } from '@/components/ui/button';
 import { RecentActivity } from '@/components/recent-activity';
 import { useUrls } from '@/hooks/use-urls';
 import { useOverview } from '@/hooks/use-analytics';
@@ -33,6 +34,13 @@ export default function DashboardPage() {
   const urlsQuery = useUrls({ page, limit, ...filters });
   const overviewQuery = useOverview();
 
+  // Deleting the last item on a page shrinks totalPages; clamp so the
+  // list doesn't sit on an empty page with no current page highlighted.
+  const totalPages = urlsQuery.data?.meta.totalPages ?? 1;
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const handleFilterChange = (patch: Partial<typeof filters>) => {
     setFilters((prev) => ({ ...prev, ...patch }));
     setPage(1);
@@ -46,6 +54,25 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Monitor your links, clicks and visitor growth."
       />
+
+      {(urlsQuery.isError || overviewQuery.isError) && (
+        <div
+          role="alert"
+          className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span>Couldn&apos;t load your links. Check your connection and try again.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void urlsQuery.refetch();
+              void overviewQuery.refetch();
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={MousePointerClick} label="Total clicks" value={stats?.totalClicks ?? 0} loading={overviewQuery.isLoading} />
@@ -73,7 +100,7 @@ export default function DashboardPage() {
           <div className="mt-4">
             <Pagination
               page={urlsQuery.data?.meta.page ?? page}
-              totalPages={urlsQuery.data?.meta.totalPages ?? 1}
+              totalPages={totalPages}
               total={urlsQuery.data?.meta.total ?? 0}
               onChange={setPage}
             />

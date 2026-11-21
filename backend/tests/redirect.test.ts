@@ -101,6 +101,21 @@ describe('redirect', () => {
     }
   });
 
+  it('rejects malformed slugs without touching the database', async () => {
+    const spy = vi.spyOn(urlRepository, 'findByShortCode');
+    try {
+      // Too short, too long, and illegal characters can never be real
+      // slugs (random codes and aliases both match ALIAS_REGEX).
+      await api.get('/ab').expect(404);
+      await api.get('/a-very-long-slug-that-exceeds-thirty-two-chars').expect(404);
+      await api.get('/favicon.ico').expect(404);
+      expect(spy).not.toHaveBeenCalled();
+      expect(await mockRedis.get('short:favicon.ico')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('coalesces a cache stampede into a single DB lookup', async () => {
     await createLink(api, user, {
       originalUrl: 'https://example.com',

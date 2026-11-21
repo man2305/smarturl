@@ -202,6 +202,25 @@ describe('search and pagination', () => {
       expect((await list(user, { status: 'bogus' })).body.meta.total).toBe(2);
     });
 
+    it('treats a past-expiry link as expired even before the sweeper runs', async () => {
+      await seedLink(user.userId, { shortCode: 'act-002', isActive: true });
+      await seedLink(user.userId, {
+        shortCode: 'past001',
+        isActive: true,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      // The badge shows "Expired" for past-date links, so the filter must
+      // agree — otherwise the link appears under "Active" with an
+      // "Expired" badge.
+      const active = await list(user, { status: 'active' });
+      expect(active.body.meta.total).toBe(1);
+      expect(active.body.data[0].shortCode).toBe('act-002');
+      const expired = await list(user, { status: 'expired' });
+      expect(expired.body.meta.total).toBe(1);
+      expect(expired.body.data[0].shortCode).toBe('past001');
+    });
+
     it('returns an empty page with zero totals when the user has no links', async () => {
       const res = await list(user, {});
       expect(res.body.data).toEqual([]);
